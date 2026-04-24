@@ -1,194 +1,368 @@
-------------------------------------------------------------------------------------------------------
-ATELIER FROM IMAGE TO CLUSTER
-------------------------------------------------------------------------------------------------------
-L’idée en 30 secondes : Cet atelier consiste à **industrialiser le cycle de vie d’une application** simple en construisant une **image applicative Nginx** personnalisée avec **Packer**, puis en déployant automatiquement cette application sur un **cluster Kubernetes** léger (K3d) à l’aide d’**Ansible**, le tout dans un environnement reproductible via **GitHub Codespaces**.
-L’objectif est de comprendre comment des outils d’Infrastructure as Code permettent de passer d’un artefact applicatif maîtrisé à un déploiement cohérent et automatisé sur une plateforme d’exécution.
-  
--------------------------------------------------------------------------------------------------------
-Séquence 1 : Codespace de Github
--------------------------------------------------------------------------------------------------------
-Objectif : Création d'un Codespace Github  
-Difficulté : Très facile (~5 minutes)
--------------------------------------------------------------------------------------------------------
-**Faites un Fork de ce projet**. Si besion, voici une vidéo d'accompagnement pour vous aider dans les "Forks" : [Forker ce projet](https://youtu.be/p33-7XQ29zQ) 
-  
-Ensuite depuis l'onglet [CODE] de votre nouveau Repository, **ouvrez un Codespace Github**.
-  
----------------------------------------------------
-Séquence 2 : Création du cluster Kubernetes K3d
----------------------------------------------------
-Objectif : Créer votre cluster Kubernetes K3d  
-Difficulté : Simple (~5 minutes)
----------------------------------------------------
-Vous allez dans cette séquence mettre en place un cluster Kubernetes K3d contenant un master et 2 workers.  
-Dans le terminal du Codespace copier/coller les codes ci-dessous etape par étape :  
+# 🚀 Atelier — From Image to Cluster
 
-**Création du cluster K3d**  
+**Auteur :** zinebbouayad  
+**Environnement :** GitHub Codespaces  
+**Outils :** Packer · Kubernetes K3d · Ansible · Docker · Nginx
+
+---
+
+## 📋 Description
+
+Cet atelier industrialise le cycle de vie d'une application web simple en :
+
+1. Construisant une image Docker personnalisée **Nginx** avec **Packer**
+2. Déployant cette image sur un cluster **Kubernetes K3d** via **Ansible**
+3. Le tout dans un environnement reproductible via **GitHub Codespaces**
+
+---
+
+## 🏗️ Architecture cible
+
 ```
+GitHub Codespace
+│
+├── index.html            ← Page web personnalisée (artefact applicatif)
+│
+├── Packer                ← Build de l'image Docker
+│   └── nginx.pkr.hcl     → image mon-nginx-custom:latest
+│           ↓
+├── K3d                   ← Import de l'image dans le cluster local
+│   └── k3d image import
+│           ↓
+└── Kubernetes            ← Déploiement de l'application
+    ├── deployment.yaml   → 1 Pod nginx-custom en cours d'exécution
+    └── service.yaml      → Service NodePort exposé
+            ↓
+      port-forward 8081 → navigateur ✅
+```
+
+---
+
+## 📦 Prérequis
+
+- Un compte **GitHub**
+- Un **Codespace GitHub** ouvert sur ce repository
+- Aucune installation locale nécessaire — tout se passe dans le Codespace
+
+---
+
+## 🔧 Séquence 1 — Création du Codespace
+
+1. Forkez ce repository sur votre compte GitHub
+2. Depuis l'onglet **[CODE]**, cliquez sur **"Open with Codespaces"**
+3. Attendez que l'environnement soit prêt (~1 minute)
+
+---
+
+## ☸️ Séquence 2 — Création du cluster Kubernetes K3d
+
+### Installation de K3d
+
+```bash
 curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
 ```
-```
+
+### Création du cluster (1 master + 2 workers)
+
+```bash
 k3d cluster create lab \
   --servers 1 \
   --agents 2
 ```
-**vérification du cluster**  
-```
+
+### Vérification du cluster
+
+```bash
 kubectl get nodes
 ```
-**Déploiement d'une application (Docker Mario)**  
+
+Résultat attendu :
+
 ```
+NAME               STATUS   ROLES                  AGE   VERSION
+k3d-lab-agent-0    Ready    <none>                 ...   v1.31.5+k3s1
+k3d-lab-agent-1    Ready    <none>                 ...   v1.31.5+k3s1
+k3d-lab-server-0   Ready    control-plane,master   ...   v1.31.5+k3s1
+```
+
+### Test avec l'application Mario (optionnel)
+
+```bash
 kubectl create deployment mario --image=sevenajay/mario
 kubectl expose deployment mario --type=NodePort --port=80
-kubectl get svc
-```
-**Forward du port 80**  
-```
-kubectl port-forward svc/mario 8080:80 >/tmp/mario.log 2>&1 &
-```
-**Réccupération de l'URL de l'application Mario** 
-Votre application Mario est déployée sur le cluster K3d. Pour obtenir votre URL cliquez sur l'onglet **[PORTS]** dans votre Codespace et rendez public votre port **8080** (Visibilité du port).
-Ouvrez l'URL dans votre navigateur et jouer !
-
----------------------------------------------------
-Séquence 3 : Exercice
----------------------------------------------------
-Objectif : Customisez un image Docker avec Packer et déploiement sur K3d via Ansible
-Difficulté : Moyen/Difficile (~2h)
----------------------------------------------------  
-Votre mission (si vous l'acceptez) : Créez une **image applicative customisée à l'aide de Packer** (Image de base Nginx embarquant le fichier index.html présent à la racine de ce Repository), puis déployer cette image customisée sur votre **cluster K3d** via **Ansible**, le tout toujours dans **GitHub Codespace**.  
-
-**Architecture cible :** Ci-dessous, l'architecture cible souhaitée.   
-  
-![Screenshot Actions](Architecture_cible.png)   
-  
----------------------------------------------------  
-## Processus de travail (résumé)
-
-1. Installation du cluster Kubernetes K3d (Séquence 1)
-2. Installation de Packer et Ansible
-3. Build de l'image customisée (Nginx + index.html)
-4. Import de l'image dans K3d
-5. Déploiement du service dans K3d via Ansible
-6. Ouverture des ports et vérification du fonctionnement
-
----------------------------------------------------
-# Séquence 3 — From Image to Cluster
-
-## Structure du projet
-
-```
-.                          ← racine du repo (contient index.html)
-├── packer/
-│   └── nginx.pkr.hcl      ← template Packer (build image Nginx + index.html)
-├── ansible/
-│   ├── deploy.yml         ← playbook de déploiement K3d
-│   ├── inventory.ini      ← inventaire Ansible (localhost)
-│   └── requirements.yml   ← collection kubernetes.core
-└── run_sequence3.sh       ← script tout-en-un
+kubectl port-forward svc/mario 8080:80 &
 ```
 
-## Exécution rapide (script tout-en-un)
+Dans l'onglet **[PORTS]** du Codespace, rendez le port `8080` **public** et ouvrez l'URL.
+
+---
+
+## 🔨 Séquence 3 — Build Packer + Déploiement K3d via Ansible
+
+### Vue d'ensemble du processus
+
+```
+[index.html] → Packer build → [mon-nginx-custom:latest] → k3d import → Ansible deploy → [Pod Running] → port-forward → [Navigateur]
+```
+
+---
+
+### Étape 1 — Vérifier les outils installés
+
+Packer et Ansible sont déjà disponibles dans le Codespace :
 
 ```bash
-chmod +x run_sequence3.sh
-./run_sequence3.sh
+packer version
+ansible --version
 ```
 
-## Exécution étape par étape
+---
 
-### 1. Installer les outils
+### Étape 2 — Créer le template Packer
+
+Créez le fichier `nginx.pkr.hcl` à la racine du repository :
+
+```hcl
+packer {
+  required_plugins {
+    docker = {
+      source  = "github.com/hashicorp/docker"
+      version = "~> 1"
+    }
+  }
+}
+
+source "docker" "nginx" {
+  image  = "nginx:latest"
+  commit = true
+}
+
+build {
+  sources = ["source.docker.nginx"]
+
+  provisioner "file" {
+    source      = "index.html"
+    destination = "/usr/share/nginx/html/index.html"
+  }
+
+  post-processors {
+    post-processor "docker-tag" {
+      repository = "mon-nginx-custom"
+      tags       = ["latest"]
+    }
+  }
+}
+```
+
+> **Explication :**
+> - `commit = true` : Packer crée l'image directement dans Docker (format standard)
+> - `provisioner "file"` : copie votre `index.html` dans le conteneur
+> - `docker-tag` : nomme l'image `mon-nginx-custom:latest`
+
+---
+
+### Étape 3 — Builder l'image avec Packer
 
 ```bash
-# Packer
-curl -fsSL https://apt.releases.hashicorp.com/gpg \
-  | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
-echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
-  https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
-  | sudo tee /etc/apt/sources.list.d/hashicorp.list
-sudo apt-get update && sudo apt-get install -y packer
-
-# Ansible + dépendances Python
-sudo apt-get install -y ansible python3-pip
-pip install kubernetes
-ansible-galaxy collection install -r ansible/requirements.yml
+packer init nginx.pkr.hcl
+packer build nginx.pkr.hcl
 ```
 
-### 2. Créer le cluster K3d 
+Vérifiez que l'image est bien créée :
 
 ```bash
-k3d cluster create lab --servers 1 --agents 2
-kubectl get nodes
+docker images | grep mon-nginx
 ```
 
-### 3. Builder l'image avec Packer
+Résultat attendu :
+
+```
+mon-nginx-custom   latest   abc123...   2 minutes ago   186MB
+```
+
+---
+
+### Étape 4 — Importer l'image dans K3d
+
+> ⚠️ **Cette étape est indispensable** : K3d est un cluster isolé qui ne voit pas les images Docker locales par défaut. Il faut les importer explicitement.
 
 ```bash
-cd packer/
-packer init .
-packer build -force .
-# → génère nginx-custom.tar dans packer/
-ls -lh nginx-custom.tar
+k3d image import mon-nginx-custom:latest -c lab
 ```
 
-### 4. Déployer avec Ansible
+Résultat attendu :
+
+```
+INFO[0000] Importing image(s) into cluster 'lab'
+INFO[0020] Successfully imported 1 image(s) into 1 cluster(s)
+```
+
+---
+
+### Étape 5 — Créer le fichier de déploiement Kubernetes
+
+Créez le fichier `deployment.yaml` :
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-custom
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-custom
+  template:
+    metadata:
+      labels:
+        app: nginx-custom
+    spec:
+      containers:
+      - name: nginx-custom
+        image: mon-nginx-custom:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 80
+```
+
+> ⚠️ **Important** : `imagePullPolicy: Never` est obligatoire pour que Kubernetes utilise l'image locale importée, et non tenter de la télécharger depuis Docker Hub.
+
+---
+
+### Étape 6 — Déployer sur K3d via Ansible
+
+Créez le fichier `deploy.yml` (playbook Ansible) :
+
+```yaml
+---
+- name: Deploy nginx-custom on K3d
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+
+    - name: Appliquer le Deployment
+      shell: kubectl apply -f deployment.yaml
+
+    - name: Attendre que les pods soient prêts
+      command: kubectl rollout status deployment/nginx-custom --timeout=90s
+
+    - name: Afficher les pods
+      command: kubectl get pods -l app=nginx-custom
+      register: pods
+    - debug: var=pods.stdout_lines
+
+    - name: Créer le Service NodePort
+      shell: kubectl expose deployment nginx-custom --type=NodePort --port=80 --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Lancez le déploiement :
 
 ```bash
-cd ansible/
-ansible-playbook deploy.yml \
-  -i inventory.ini \
-  -e "image_tar=$(pwd)/../packer/nginx-custom.tar" \
-  -v
+ansible-playbook deploy.yml -i inventory.ini \
+  -e "ansible_python_interpreter=/usr/bin/python3"
 ```
 
-### 5. Vérifier le déploiement
+Résultat attendu :
+
+```
+TASK [Attendre que les pods soient prêts]
+deployment "nginx-custom" successfully rolled out
+
+TASK [Afficher les pods]
+NAME                            READY   STATUS    RESTARTS   AGE
+nginx-custom-xxx                1/1     Running   0          5s
+```
+
+---
+
+### Étape 7 — Exposer l'application et y accéder
 
 ```bash
-kubectl get deployments,pods,svc -l app=nginx-custom
-curl http://localhost:8080
+kubectl port-forward svc/nginx-custom 8081:80 &
 ```
 
-### 6. Exposer dans Codespace
-
-Onglet **[PORTS]** → port `8080` → **Visibilité : Public** → ouvrir l'URL.
-
-## Ce que fait chaque outil
-
-| Outil | Rôle |
-|-------|------|
-| **Packer** | Build une image Docker `nginx-custom:latest` à partir de `nginx:alpine` en y copiant `index.html` |
-| **k3d image import** | Charge l'image tar dans le registre interne du cluster K3d sans passer par Docker Hub |
-| **Ansible** | Automatise l'import, le déploiement (Deployment + Service), l'attente de readiness et le port-forward |
-
-## Dépannage
+Testez dans le terminal :
 
 ```bash
-# Voir les logs du pod
-kubectl logs -l app=nginx-custom
-
-# Voir le log du port-forward
-cat /tmp/nginx-pf.log
-
-# Relancer manuellement le port-forward
-kubectl port-forward svc/nginx-custom 8080:80 >/tmp/nginx-pf.log 2>&1 &
+curl http://localhost:8081
 ```
 
---------------------------------------------------
----------------------------------------------------
-Séquence 4 : Documentation  
-Difficulté : Facile (~30 minutes)
----------------------------------------------------
-**Complétez et documentez ce fichier README.md** pour nous expliquer comment utiliser votre solution.  
-Faites preuve de pédagogie et soyez clair dans vos expliquations et processus de travail.  
-   
----------------------------------------------------
-Evaluation
----------------------------------------------------
-Cet atelier, **noté sur 20 points**, est évalué sur la base du barème suivant :  
-- Repository exécutable sans erreur majeure (4 points)
-- Fonctionnement conforme au scénario annoncé (4 points)
-- Degré d'automatisation du projet (utilisation de Makefile ? script ? ...) (4 points)
-- Qualité du Readme (lisibilité, erreur, ...) (4 points)
-- Processus travail (quantité de commits, cohérence globale, interventions externes, ...) (4 points) 
+Puis dans l'onglet **[PORTS]** du Codespace :
+- Localisez le port **8081**
+- Clic droit → **Port Visibility** → **Public**
+- Cliquez sur l'icône 🌐 pour ouvrir l'URL dans le navigateur
 
+✅ Vous devriez voir votre page `index.html` personnalisée s'afficher !
 
+---
+
+## ✅ Résultat final
+
+![Nginx déployé via Packer + Ansible sur K3d](Architecture_cible.png)
+
+```
+✅ Nginx déployé via Packer + Ansible sur K3d
+Build time: 2026-04-24T10:40:58+00:00
+```
+
+---
+
+## 📁 Structure du projet
+
+```
+Image_to_Cluster/
+├── index.html          # Page web personnalisée servie par Nginx
+├── nginx.pkr.hcl       # Template Packer pour builder l'image Docker
+├── deployment.yaml     # Manifeste Kubernetes pour déployer sur K3d
+├── deploy.yml          # Playbook Ansible pour automatiser le déploiement
+├── inventory.ini       # Inventaire Ansible (localhost)
+├── service.yaml        # Service Kubernetes NodePort
+└── README.md           # Ce fichier
+```
+
+---
+
+## 🛠️ Récapitulatif des commandes
+
+| Étape | Commande |
+|-------|----------|
+| Installer K3d | `curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh \| bash` |
+| Créer le cluster | `k3d cluster create lab --servers 1 --agents 2` |
+| Vérifier le cluster | `kubectl get nodes` |
+| Build image Packer | `packer build nginx.pkr.hcl` |
+| Vérifier l'image | `docker images \| grep mon-nginx` |
+| Importer dans K3d | `k3d image import mon-nginx-custom:latest -c lab` |
+| Déployer via Ansible | `ansible-playbook deploy.yml -i inventory.ini` |
+| Port-forward | `kubectl port-forward svc/nginx-custom 8081:80 &` |
+| Tester | `curl http://localhost:8081` |
+
+---
+
+## ⚠️ Problèmes rencontrés et solutions
+
+### Problème 1 : `export_path` incompatible avec `docker-tag`
+**Erreur :** `Post-processor failed: Unknown artifact type: packer.docker`  
+**Solution :** Remplacer `export_path` par `commit = true` dans le template Packer.
+
+### Problème 2 : `ErrImagePull` / `ImagePullBackOff`
+**Erreur :** Kubernetes essaie de télécharger l'image depuis Internet.  
+**Solution :** Ajouter `imagePullPolicy: Never` dans le `deployment.yaml` et toujours faire `k3d image import` avant de déployer.
+
+### Problème 3 : Mauvais interpréteur Python pour Ansible
+**Erreur :** `Failed to import the required Python library (kubernetes)`  
+**Solution :** Ajouter `-e "ansible_python_interpreter=/usr/bin/python3"` à la commande ansible-playbook.
+
+### Problème 4 : Port 8080 déjà utilisé par Mario
+**Solution :** Utiliser le port `8081` pour nginx-custom ou tuer le port-forward existant :
+```bash
+pkill -f "port-forward svc/mario"
+```
+
+---
+
+## 👩‍💻 Auteur
+
+**zinebbouayad** — Atelier réalisé dans GitHub Codespaces avec K3d v5.8.3, Packer v1.15.1, Ansible 9.2.0 et Kubernetes v1.31.5.
