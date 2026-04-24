@@ -73,6 +73,108 @@ Votre mission (si vous l'acceptez) : Créez une **image applicative customisée 
 6. Ouverture des ports et vérification du fonctionnement
 
 ---------------------------------------------------
+# Séquence 3 — From Image to Cluster
+
+## Structure du projet
+
+```
+.                          ← racine du repo (contient index.html)
+├── packer/
+│   └── nginx.pkr.hcl      ← template Packer (build image Nginx + index.html)
+├── ansible/
+│   ├── deploy.yml         ← playbook de déploiement K3d
+│   ├── inventory.ini      ← inventaire Ansible (localhost)
+│   └── requirements.yml   ← collection kubernetes.core
+└── run_sequence3.sh       ← script tout-en-un
+```
+
+## Exécution rapide (script tout-en-un)
+
+```bash
+chmod +x run_sequence3.sh
+./run_sequence3.sh
+```
+
+## Exécution étape par étape
+
+### 1. Installer les outils
+
+```bash
+# Packer
+curl -fsSL https://apt.releases.hashicorp.com/gpg \
+  | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+  https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
+  | sudo tee /etc/apt/sources.list.d/hashicorp.list
+sudo apt-get update && sudo apt-get install -y packer
+
+# Ansible + dépendances Python
+sudo apt-get install -y ansible python3-pip
+pip install kubernetes
+ansible-galaxy collection install -r ansible/requirements.yml
+```
+
+### 2. Créer le cluster K3d 
+
+```bash
+k3d cluster create lab --servers 1 --agents 2
+kubectl get nodes
+```
+
+### 3. Builder l'image avec Packer
+
+```bash
+cd packer/
+packer init .
+packer build -force .
+# → génère nginx-custom.tar dans packer/
+ls -lh nginx-custom.tar
+```
+
+### 4. Déployer avec Ansible
+
+```bash
+cd ansible/
+ansible-playbook deploy.yml \
+  -i inventory.ini \
+  -e "image_tar=$(pwd)/../packer/nginx-custom.tar" \
+  -v
+```
+
+### 5. Vérifier le déploiement
+
+```bash
+kubectl get deployments,pods,svc -l app=nginx-custom
+curl http://localhost:8080
+```
+
+### 6. Exposer dans Codespace
+
+Onglet **[PORTS]** → port `8080` → **Visibilité : Public** → ouvrir l'URL.
+
+## Ce que fait chaque outil
+
+| Outil | Rôle |
+|-------|------|
+| **Packer** | Build une image Docker `nginx-custom:latest` à partir de `nginx:alpine` en y copiant `index.html` |
+| **k3d image import** | Charge l'image tar dans le registre interne du cluster K3d sans passer par Docker Hub |
+| **Ansible** | Automatise l'import, le déploiement (Deployment + Service), l'attente de readiness et le port-forward |
+
+## Dépannage
+
+```bash
+# Voir les logs du pod
+kubectl logs -l app=nginx-custom
+
+# Voir le log du port-forward
+cat /tmp/nginx-pf.log
+
+# Relancer manuellement le port-forward
+kubectl port-forward svc/nginx-custom 8080:80 >/tmp/nginx-pf.log 2>&1 &
+```
+
+--------------------------------------------------
+---------------------------------------------------
 Séquence 4 : Documentation  
 Difficulté : Facile (~30 minutes)
 ---------------------------------------------------
